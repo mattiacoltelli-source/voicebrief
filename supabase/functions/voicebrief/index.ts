@@ -8,6 +8,8 @@ const MAX_BYTES = 10 * 1024 * 1024;
 const MAX_SECONDS = 10 * 60;
 const MAX_TEXT_CHARS = 60_000;
 const MAX_PARTS = 10;
+const STT_TIMEOUT_MS = 80_000; // il client abbandona a 120 s: la funzione risponde prima, con un errore chiaro
+const LLM_TIMEOUT_MS = 40_000;
 // tetto mensile ~1 EUR, in micro-USD (leggermente sotto 1 EUR per margine sul cambio)
 const CAP_MICRO_USD = Number(Deno.env.get("MONTHLY_CAP_MICRO_USD") ?? 1_050_000);
 const STT_MODEL = Deno.env.get("OPENAI_STT_MODEL") ?? "gpt-4o-mini-transcribe";
@@ -146,6 +148,23 @@ async function reserve(microUsd: number): Promise<boolean> {
   return data === true;
 }
 
+// chiamata a OpenAI con timeout (un 504 sintetico invece di restare appesi) e un solo nuovo tentativo su 429/5xx o errore di rete;
+// il timeout non si ritenta. Il body è sempre riusabile (stringa o FormData)
+async function openai(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    let res: Response | null = null;
+    try {
+      res = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "TimeoutError") return new Response(null, { status: 504 });
+      if (attempt > 0) return new Response(null, { status: 502 });
+    }
+    if (res && res.status !== 429 && res.status < 500) return res;
+    if (attempt > 0) return res ?? new Response(null, { status: 502 });
+    await new Promise((r) => setTimeout(r, 800));
+  }
+}
+
 function log(o: Record<string, unknown>) {
   console.log(JSON.stringify(o)); // solo metadati
 }
@@ -194,11 +213,11 @@ Deno.serve(async (req) => {
       fd.append("model", STT_MODEL);
       fd.append("response_format", "json");
       if (form.get("language") === "it") fd.append("language", "it"); // lingua nota: trascrive meglio; altrimenti la riconosce da solo
-      const r = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      const r = await openai("https://api.openai.com/v1/audio/transcriptions", {
         method: "POST",
         headers: { Authorization: `Bearer ${key}` },
         body: fd,
-      });
+      }, STT_TIMEOUT_MS);
       if (r.status === 400) return done(400, "stt_400", { error: "invalid_audio", message: "File audio non valido." });
       if (!r.ok) return done(502, `stt_${r.status}`, { error: "provider", message: "Errore del servizio di trascrizione." });
       const text = String((await r.json()).text ?? "").trim();
@@ -219,7 +238,7 @@ Deno.serve(async (req) => {
       if (!(await reserve((etext.length / 2.5 + 250) * LLM_IN_MICRO_PER_TOKEN + 300 * LLM_OUT_MICRO_PER_TOKEN)))
         return done(429, "budget", { error: "budget", message: "Tetto di spesa mensile raggiunto. Si sblocca il mese prossimo." });
       const nullableStr = { type: ["string", "null"] };
-      const er = await fetch("https://api.openai.com/v1/chat/completions", {
+      const er = await openai("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
         body: JSON.stringify({
@@ -254,7 +273,7 @@ Deno.serve(async (req) => {
             { role: "user", content: `<trascrizione>\n${etext}\n</trascrizione>` },
           ],
         }),
-      });
+      }, LLM_TIMEOUT_MS);
       if (!er.ok) return done(502, `event_${er.status}`, { error: "provider", message: "Errore del servizio." });
       let dropped = 0;
       type Ev = { kind: string; what: string | null; when: string | null; where: string | null; who: string | null; party: string | null };
@@ -324,7 +343,7 @@ Deno.serve(async (req) => {
     const sysPrompt = (rewrite ? SYSTEM_BASE : SYSTEM) + partsNote +
       (mode === "bullets" ? bulletsPrompt(maxBullets) : mode === "summary" ? summaryPrompt(maxSentencesFor(secs)) : mode === "comment" ? commentPrompt(maxSentencesFor(secs), tone) : mode === "translate" && body?.target === "en" ? TRANSLATE_EN : MODES[mode]);
     const askWith = async (model: string, temperature: number, extra = ""): Promise<string | null> => {
-      const r = await fetch("https://api.openai.com/v1/chat/completions", {
+      const r = await openai("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
         body: JSON.stringify({
@@ -337,7 +356,7 @@ Deno.serve(async (req) => {
             { role: "user", content: `<trascrizione>\n${text}\n</trascrizione>` },
           ],
         }),
-      });
+      }, LLM_TIMEOUT_MS);
       if (!r.ok) return null;
       const content = String((await r.json()).choices?.[0]?.message?.content ?? "").trim();
       if (mode !== "comment") return content;

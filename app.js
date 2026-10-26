@@ -405,20 +405,28 @@ const ctls = new Set();   // richieste in corso (per Annulla)
 let cancelled = false;
 class ApiError extends Error { constructor(code, message) { super(message); this.code = code; } }
 
-async function api(init) {
+const RETRY_STATUS = [502, 503, 504];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// un solo nuovo tentativo su errori transitori (rete instabile, 502/503/504); mai su annullamento, timeout o tetto di spesa
+async function api(init, attempt = 0) {
   if (!navigator.onLine) throw new ApiError('offline', 'Nessuna connessione. L’audio resta salvato: riprova appena torni online.');
   const ctl = new AbortController();
   ctls.add(ctl);
-  const timer = setTimeout(() => ctl.abort(), 120000);
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; ctl.abort(); }, 120000);
   let res;
   try {
     res = await fetch(self.VB.API_URL, { ...init, signal: ctl.signal, headers: init.headers });
   } catch {
     if (cancelled) throw new ApiError('cancelled', '');
+    if (!timedOut && attempt === 0) { await sleep(1500); if (!cancelled) return api(init, 1); }
     throw new ApiError('offline', 'Connessione assente o instabile. L’audio resta salvato: riprova.');
   } finally { clearTimeout(timer); ctls.delete(ctl); }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(data.error || 'server', data.message || 'Errore del servizio. Riprova tra poco.');
+  if (!res.ok) {
+    if (attempt === 0 && RETRY_STATUS.includes(res.status) && !cancelled) { await sleep(1500); if (!cancelled) return api(init, 1); }
+    throw new ApiError(data.error || 'server', data.message || 'Errore del servizio. Riprova tra poco.');
+  }
   return data;
 }
 
