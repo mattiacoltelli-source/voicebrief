@@ -122,6 +122,7 @@ function showView(view) { // 'idle' | 'pick' | 'recording' | 'working' | 'result
   show('result', view === 'result');
   show('brand', view !== 'result');
   curView = view;
+  document.body.dataset.view = view;
   updateInstall();
   show('lang', view === 'idle' || view === 'pick'); // la lingua conta solo prima di trascrivere
   show('rec-start', view === 'idle'); // registrare è un'opzione secondaria, solo da qui

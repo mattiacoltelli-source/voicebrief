@@ -155,7 +155,24 @@ li[data-state=done] .w-done { display: block; }
 .c-line { margin: -6px 0 6px; padding: 4px 0 4px 12px; border-left: 3px solid var(--brand); font-style: italic; color: var(--deep); }
 .c-note { margin: 4px 0 0; font-size: 12px; color: #6d8480; }
 
-.lang { display: flex; align-items: center; gap: 8px; margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+.lang { display: flex; align-items: center; gap: 8px; margin: auto 0 0; padding: 8px 0 4px; font-size: 13px; color: var(--muted); position: sticky; bottom: 0; background: #fff; z-index: 2; }
 .lang span { margin-right: auto; }
 .lang button { min-height: 44px; padding: 0 14px; border: 2px solid var(--line); border-radius: 14px; background: #fff; color: var(--deep); font: inherit; font-weight: 600; }
 .lang button[aria-pressed="true"] { background: var(--tint); border-color: var(--brand); }
+
+/* schermata iniziale: tutto in una pagina fissa, senza scorrimento (lingua inclusa) */
+body[data-view=idle] { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+body[data-view=idle] .app { flex: 1; min-height: 0; width: 100%; overflow: hidden; }
+body[data-view=idle] .idle { min-height: 0; padding-bottom: 8px; }
+@media (max-height: 700px) {
+  body[data-view=idle] .top { padding-top: 16px; }
+  body[data-view=idle] .hero { width: 80px; height: 80px; box-shadow: 0 0 0 10px #f2f9f8; }
+  body[data-view=idle] .hero svg { width: 36px; height: 36px; }
+  body[data-view=idle] .idle h1 { margin-top: 20px; font-size: 22px; }
+  body[data-view=idle] .steps { margin-top: 16px; padding: 4px 16px; }
+  body[data-view=idle] .steps li { min-height: 44px; }
+}
+@media (max-height: 560px) {
+  body[data-view=idle] .hero { display: none; }
+  body[data-view=idle] .idle h1 { margin-top: 0; }
+}
