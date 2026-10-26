@@ -81,6 +81,30 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+const NET_TIMEOUT = 3000;
+const NET_TIMEOUT_SLOW = 600; // dopo un timeout la rete è considerata lenta per un minuto: gli altri file (script, css) non aspettano di nuovo 3 s
+let slowUntil = 0;
+// network-first con fallback cache; 'no-cache' = riconvalida sempre col server (niente file vecchi dalla cache HTTP di 10 min).
+// Con rete lenta, dopo NET_TIMEOUT si apre la copia in cache invece di restare bianchi (la rete continua e aggiorna la cache)
+async function networkFirst(req) {
+  const fallback = () => caches.match(req, { ignoreSearch: true });
+  const net = fetch(req, { cache: 'no-cache' }).then((res) => {
+    if (res.ok) {
+      const copy = res.clone();
+      caches.open(CACHE).then((c) => c.put(req, copy));
+    }
+    return res;
+  });
+  let settled = false;
+  net.then(() => { settled = true; }, () => { settled = true; });
+  const timer = new Promise((res) => setTimeout(() => { if (!settled) slowUntil = Date.now() + 60000; res(fallback()); }, Date.now() < slowUntil ? NET_TIMEOUT_SLOW : NET_TIMEOUT));
+  try {
+    return (await Promise.race([net, timer])) || (await net);
+  } catch {
+    return (await fallback()) || Response.error();
+  }
+}
+
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
@@ -89,16 +113,5 @@ self.addEventListener('fetch', (e) => {
     return;
   }
   if (req.method !== 'GET' || url.origin !== location.origin) return;
-  // network-first con fallback cache; 'no-cache' = riconvalida sempre col server (niente file vecchi dalla cache HTTP di 10 min)
-  e.respondWith(
-    fetch(req, { cache: 'no-cache' })
-      .then((res) => {
-        if (res.ok) {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy));
-        }
-        return res;
-      })
-      .catch(() => caches.match(req, { ignoreSearch: true }))
-  );
+  e.respondWith(networkFirst(req));
 });
