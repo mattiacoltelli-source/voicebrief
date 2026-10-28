@@ -609,7 +609,8 @@ function renderTasks(list) {
     let text = '\n\nDa fare';
     for (const t of rows) {
       const row = $('task-tpl').content.firstElementChild.cloneNode(true);
-      const who = t.name || TASK_OWNER[t.owner] || '';
+      // il nome conta solo se la cosa spetta a una terza persona: nelle altre ('chiama Marco') Marco è l'oggetto, non chi la fa
+      const who = (t.owner === 'other' && t.name) || TASK_OWNER[t.owner] || '';
       const small = [who, t.when ? evValue('when', t.when) : ''].filter(Boolean).join(' · ');
       row.querySelector('small').textContent = small;
       row.querySelector('small').hidden = !small;
