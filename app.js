@@ -13,7 +13,7 @@ let items = [];          // vocali del gruppo in ordine cronologico (da IndexedD
 let curIdx = 0;          // vocale caricato nel player
 let duration = null;     // secondi del vocale nel player
 const jobs = new Map();    // id -> richiesta di trascrizione in corso
-const evCache = new Map(); // id -> impegni estratti ([] = nessuno), solo in memoria
+const evCache = new Map(); // id -> { events, tasks } estratti ([] = nessuno), solo in memoria
 let objectUrl = null;
 let busy = false;
 
@@ -465,7 +465,10 @@ async function getEvent(it, text) {
   if (evCache.has(it.id)) return evCache.get(it.id);
   try {
     const data = await api({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ step: 'event', text }) });
-    evCache.set(it.id, Array.isArray(data.events) ? data.events : (data.event ? [data.event] : []));
+    evCache.set(it.id, {
+      events: Array.isArray(data.events) ? data.events : (data.event ? [data.event] : []),
+      tasks: Array.isArray(data.tasks) ? data.tasks : [],
+    });
   } catch { return null; } // non salvo l'errore: riprova alla prossima elaborazione
   return evCache.get(it.id);
 }
@@ -583,6 +586,45 @@ function renderEvents(list) {
   show('ev-note', n > 0);
 }
 
+// "Da fare": richieste e promesse concrete, una riga ciascuna (max 5); chi deve farla e la scadenza solo se detti
+const TASK_OWNER = { speaker: 'Chi parla', listener: 'Chi ascolta' };
+function renderTasks(list) {
+  const box = $('tasks');
+  box.textContent = '';
+  const seen = new Set();
+  const rows = [];
+  for (const t of list || []) {
+    if (rows.length >= 5) break;
+    if (!t || !t.what || seen.has(t.what)) continue;
+    seen.add(t.what);
+    rows.push(t);
+  }
+  if (rows.length) {
+    const card = document.createElement('div');
+    card.className = 'event';
+    const title = document.createElement('div');
+    title.className = 'eyebrow ev-title';
+    title.textContent = 'Da fare';
+    card.appendChild(title);
+    let text = '\n\nDa fare';
+    for (const t of rows) {
+      const row = $('task-tpl').content.firstElementChild.cloneNode(true);
+      // il nome conta solo se la cosa spetta a una terza persona: nelle altre ('chiama Marco') Marco è l'oggetto, non chi la fa
+      const who = (t.owner === 'other' && t.name) || TASK_OWNER[t.owner] || '';
+      const small = [who, t.when ? evValue('when', t.when) : ''].filter(Boolean).join(' · ');
+      row.querySelector('small').textContent = small;
+      row.querySelector('small').hidden = !small;
+      row.querySelector('b').textContent = t.what;
+      card.appendChild(row);
+      text += '\n- ' + t.what + (small ? ` (${small})` : '');
+    }
+    box.appendChild(card);
+    lastOutput += text;
+  }
+  show('tasks', rows.length > 0);
+  if (rows.length) show('ev-note', true);
+}
+
 const setStep = (n, state) => { $('ws-' + n).dataset.state = state; };
 const SUM_LABELS = { bullets: 'Preparo il riassunto per punti', clean: 'Pulisco il testo', summary: 'Scrivo il riassunto', comment: 'Scrivo riassunto e commento', translate: 'Traduco il testo' };
 
@@ -618,7 +660,8 @@ async function run() {
     ]);
     if (cancelled) throw new ApiError('cancelled', '');
     renderResult(mode, out || '(risultato vuoto)');
-    renderEvents(good.flatMap((x, k) => (evs[k] || []).map((ev) => ({ ev, ref: referenceDate(x.it) }))));
+    renderEvents(good.flatMap((x, k) => ((evs[k] && evs[k].events) || []).map((ev) => ({ ev, ref: referenceDate(x.it) }))));
+    renderTasks(good.flatMap((x, k) => (evs[k] && evs[k].tasks) || []));
     show('share', !!navigator.share);
     showView('result');
     history.replaceState({ v: 'result' }, '');

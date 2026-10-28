@@ -227,6 +227,15 @@ export function dropAddressee(who: string | null, text: string): string | null {
 
 // --- Modalità "Commento": riassunto a paragrafi, con un commento breve in coda a ciascun paragrafo ---
 // Formato del modello: paragrafi separati da una riga vuota; le righe di commento iniziano con "> ".
+// "Da fare": l'azione deve poggiare su parole davvero dette; si confrontano le radici di 4 lettere (i verbi cambiano forma: "portami" ~ "portare", "mando" ~ "mandare")
+export function actionSupported(line: string, text: string): boolean {
+  const stem = (t: string) => t.slice(0, 4);
+  const textStems = new Set(tokens(text).map(stem));
+  const content = tokens(line).filter((t) => t.length >= 4 && !STOP.has(t));
+  if (content.length === 0) return false;
+  return content.filter((t) => textStems.has(stem(t))).length / content.length >= 0.7;
+}
+
 export type CPara = { summary: string; comment: string | null };
 export function parseIntegrated(out: string): CPara[] {
   const paras: CPara[] = [];
