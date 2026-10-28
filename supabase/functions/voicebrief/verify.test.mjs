@@ -1,5 +1,5 @@
 // node --experimental-strip-types supabase/functions/voicebrief/verify.test.mjs
-import { tokens, supported, isBooked, isPastRef, briefSupported, splitBrief, capBullets, maxBulletsFor, isGenericWhat, cleanFaithful, sameAsWhere, usefulEvent, stripPlace, dropAddressee, parseIntegrated, isSafeComment, summaryFaithful, dropEmptyClaims, isItalianText, maxSentencesFor } from "./verify.ts";
+import { tokens, supported, isBooked, isPastRef, briefSupported, splitBrief, capBullets, maxBulletsFor, isGenericWhat, cleanFaithful, sameAsWhere, usefulEvent, stripPlace, dropAddressee, parseIntegrated, isSafeComment, summaryFaithful, dropEmptyClaims, isItalianText, maxSentencesFor, actionSupported } from "./verify.ts";
 const T = (s) => new Set(tokens(s));
 const t1 = "Oh allora sabato ci vediamo alle 8, però prima devo passare da Marco a prendere la macchina, quindi magari facciamo direttamente davanti al ristorante da Gigi.";
 const cases = [
@@ -107,5 +107,7 @@ for (const [w, t, exp] of [
   if (ps.length !== 3 || ps[0].comment !== "Prima battuta." || ps[1].comment !== null || ps[2].comment !== "Ultima battuta." || ps[1].summary !== "Secondo paragrafo.") { bad++; console.log("FAIL parseIntegrated", JSON.stringify(ps)); }
   const t = "Ragazzi stasera ho comprato tre giocatori a quindici crediti, secondo me vinciamo il campionato di sicuro.";
   for (const [c, exp] of [["Ottimismo a livello fantacalcio, come sempre.", true], ["Ha speso 40 crediti e non lo dice.", false], ["Poi sbaglia come Mourinho.", false], ["Che idiota.", false]]) { if (isSafeComment(c, t) !== exp) { bad++; console.log("FAIL isSafeComment", c); } } }
+{ const t = "Ciao, portami il furgone sabato mattina e poi chiama Marco per il preventivo, io intanto ti mando il file.";
+  for (const [a, exp] of [["portare il furgone", true], ["chiamare Marco", true], ["mandare il file", true], ["comprare il vino", false], ["pagare la fattura a Luca", false], ["", false], ["di", false]]) { if (actionSupported(a, t) !== exp) { bad++; console.log("FAIL actionSupported", a); } } }
 console.log(bad ? `${bad} falliti` : "tutti ok");
 process.exit(bad ? 1 : 0);
